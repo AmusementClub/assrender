@@ -38,7 +38,7 @@ target_include_directories(${ProjectName} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/inc
 
 find_package(PkgConfig REQUIRED)
 PKG_CHECK_MODULES(LIBASS REQUIRED libass>=0.12.0)
-target_include_directories(${PluginName} PRIVATE ${LIBASS_INCLUDE_DIR})
+target_include_directories(${PluginName} PRIVATE ${LIBASS_INCLUDE_DIRS})
 target_link_libraries(${ProjectName} ${LIBASS_LINK_LIBRARIES})
 
 if (WIN32)
