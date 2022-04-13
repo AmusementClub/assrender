@@ -246,7 +246,7 @@ void VS_CC assrender_create_vs(const VSMap* in, VSMap* out, void* userData, VSCo
     if (!strcmp(userData, "TextSub")) {
         const char* f = vsapi->propGetData(in, "file", 0, &err);
         if (!f) {
-            vsapi->setError(in, "AssRender: no input file specified");
+            vsapi->setError(out, "AssRender: no input file specified");
             return;
         }
         if (!strcasecmp(strrchr(f, '.'), ".srt")) {
@@ -287,7 +287,7 @@ void VS_CC assrender_create_vs(const VSMap* in, VSMap* out, void* userData, VSCo
         int *endframes = malloc(ntext * sizeof(int));
         int nstart = vsapi->propNumElements(in, "start");
         int nend = vsapi->propNumElements(in, "end");
-        int nspan = min(nstart, nend);
+        int nspan = nstart < nend ? nstart : nend;
         if (nspan < 1) {
             for (int i = 0; i < ntext; i++)
                 startframes[i] = 0, endframes[i] = fi->vi->numFrames;
