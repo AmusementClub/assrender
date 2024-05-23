@@ -1,0 +1,139 @@
+name: build
+
+on: [push]
+
+env:
+  fc_ver: 2.14.2
+  ft_ver: 2-13-2
+  hb_ver: 8.3.1
+  fb_ver: 1.0.13
+  ass_ver: 0.17.2
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        env:
+          - os: windows-latest
+            identifier: win
+          # - os: macos-latest
+          #   identifier: osx
+          - os: ubuntu-latest
+            identifier: linux
+        arch: ['x64'] # 'arm64'
+
+    name: build-${{ matrix.env.os }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.env.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install deps (ubuntu)
+        if: matrix.env.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update && sudo apt-get install -y meson ninja-build nasm
+          git clone https://gitlab.freedesktop.org/fontconfig/fontconfig.git -b ${{ env.fc_ver }} --depth=1 fontconfig-${{ env.fc_ver }}
+          git clone --recurse-submodules https://github.com/freetype/freetype.git -b VER-${{ env.ft_ver }} --depth=1 freetype-${{ env.ft_ver }}
+          git clone --recurse-submodules https://github.com/harfbuzz/harfbuzz.git -b ${{ env.hb_ver }} --depth=1 harfbuzz-${{ env.hb_ver }}
+          git clone https://github.com/fribidi/fribidi.git -b v${{ env.fb_ver }} --depth=1 fribidi-${{ env.fb_ver }}
+          git clone https://github.com/libass/libass.git -b ${{ env.ass_ver }} --depth=1 libass-${{ env.ass_ver }}
+      
+      - name: set msbuild (windows)
+        if: matrix.env.os == 'windows-latest'
+        uses: ilammy/msvc-dev-cmd@v1
+      
+      - name: install deps and set env (windows) 
+        if: matrix.env.os == 'windows-latest'
+        run: |
+          choco install ninja nasm pkgconfiglite
+          python -m pip install --upgrade pip
+          pip install meson
+          $env:PKG_CONFIG_PATH = "C:/lib/pkgconfig"
+          Add-Content -Path $env:GITHUB_ENV -Value "PKG_CONFIG_PATH=$env:PKG_CONFIG_PATH"
+          # Get-ChildItem env:
+          git clone https://github.com/libass/libass.git -b ${{ env.ass_ver }} --depth=1 libass-${{ env.ass_ver }}
+
+      - name: build freetype (ubuntu)
+        if: matrix.env.os == 'ubuntu-latest'
+        run: |
+          cd freetype-${{ env.ft_ver }}
+          meson --default-library=static -Dharfbuzz=disabled -Dbrotli=disabled -Dpng=disabled -Dzlib=disabled build
+          meson compile -C build
+          sudo meson install -C build
+
+      - name: build fontconfig (ubuntu)
+        if: matrix.env.os == 'ubuntu-latest'
+        run: |
+          cd fontconfig-${{ env.fc_ver }}
+          meson --default-library=static -Ddoc=disabled -Dtests=disabled -Dcache-build=disabled build
+          ninja -C build
+          sudo ninja -C build install
+
+      - name: build harbuzz (ubuntu)
+        if: matrix.env.os == 'ubuntu-latest'
+        run: |
+          cd harfbuzz-${{ env.hb_ver }}
+          meson --default-library=static -Dtests=disabled -Dintrospection=disabled -Ddocs=disabled build
+          meson compile -C build
+          sudo meson install -C build
+      
+      - name: build fribidi (ubuntu)
+        if: matrix.env.os == 'ubuntu-latest'
+        run: |
+          cd fribidi-${{ env.fb_ver }}
+          meson --default-library=static -Ddocs=false -Dtests=false --backend=ninja build
+          ninja -C build
+          sudo ninja -C build install
+
+      - name: build libass (ubuntu)
+        if: matrix.env.os == 'ubuntu-latest'
+        run: |
+          cd ./libass-${{ env.ass_ver }}
+          ./autogen.sh
+          CFLAGS="-fPIC" CXXFLAGS="-fPIC" ./configure --disable-shared
+          make -j2
+          sudo make install
+      
+      - name: build libass (windows)
+        if: matrix.env.os == 'windows-latest'
+        run: |
+          cd ./libass-${{ env.ass_ver }}
+          meson wrap update-db
+          meson wrap install fribidi
+          meson wrap install fontconfig
+          meson wrap install freetype2
+          meson wrap install expat
+          meson wrap install harfbuzz
+          meson wrap install libpng
+          meson wrap install zlib
+          
+          meson -Ddefault_library=static -Dbuildtype=release -Dasm=enabled build
+          meson compile -C build
+          meson install -C build
+
+      - name: build (ubuntu)
+        if: matrix.env.os == 'ubuntu-latest'
+        run: |
+          cmake -B build -S .
+          cmake --build build --clean-first
+      
+      - name: build (windows)
+        if: matrix.env.os == 'windows-latest'
+        run: |
+          cmake -B build -S .
+          cd build
+          msbuild /t:Rebuild /m /p:Configuration=Release /p:RuntimeLibrary=MultiThreaded /p:Platform=${{ matrix.arch }} .\assrender.sln
+      
+      - name: set short version
+        shell: bash
+        run: |
+            ver_short=`git rev-parse --short HEAD`
+            echo "VERSION=$ver_short" >> $GITHUB_ENV
+      
+      - name: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: assrender_${{ matrix.env.os }}-${{ matrix.arch }}_${{ env.VERSION }}
+          path: |
+            build/src/libassrender.so
+            build/src/Release/assrender.dll
