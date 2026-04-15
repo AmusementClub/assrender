@@ -5,7 +5,7 @@ on: [push]
 env:
   fc_ver: 2.17.1
   ft_ver: 2-13-3
-  hb_ver: 11.4.3
+  hb_ver: 13.0.1
   fb_ver: 1.0.16
   ass_ver: 0.17.4
 

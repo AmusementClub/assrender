@@ -70,5 +70,5 @@ typedef struct {
     void* user_data;
 } VS_FilterInfo;
 
-#define ASSRENDER_VERSION "0.38.3"
+#define ASSRENDER_VERSION "0.38.4"
 #endif

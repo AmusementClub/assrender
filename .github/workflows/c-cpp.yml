@@ -16,7 +16,7 @@ jobs:
   #         cmake --build build --clean-first
 
   build-macos:
-    runs-on: macos-13
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - name: install deps
