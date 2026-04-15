@@ -130,7 +130,8 @@ CSRIAPI int csri_request_fmt(csri_inst *inst, const struct csri_fmt *fmt)
         ass_set_storage_size(inst->ud->ass_renderer, inst->width, inst->height);
 
     const int bits_per_pixel = 8;
-    const int pixelsize = 32;
+    // sub_img stores four separate 8-bit planes; pixelsize is bytes per plane sample.
+    const int pixelsize = 1;
     const int rgb_fullscale = false;
     const int greyscale = false;
 
