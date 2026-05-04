@@ -107,7 +107,7 @@ CSRIAPI int csri_request_fmt(csri_inst *inst, const struct csri_fmt *fmt)
 
     switch (fmt->pixfmt) {
     case CSRI_F_BGR_:
-        inst->ud->apply = apply_rgba;
+        inst->ud->apply = apply_bgr_;
         break;
     default:
         return -1;

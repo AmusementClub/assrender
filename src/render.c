@@ -268,6 +268,43 @@ void apply_rgba(uint8_t** sub_img, uint8_t** data, int32_t* pitch, uint32_t widt
     }
 }
 
+void apply_bgr_(uint8_t** sub_img, uint8_t** data, int32_t* pitch, uint32_t width, uint32_t height)
+{
+    uint8_t *srcA, *srcR, *srcG, *srcB, *dstA, *dstR, *dstG, *dstB;
+    uint32_t i, j, k;
+
+    srcR = sub_img[1];
+    srcG = sub_img[2];
+    srcB = sub_img[3];
+    srcA = sub_img[0];
+
+    dstB = data[0];
+    dstG = dstB + 1;
+    dstR = dstB + 2;
+    dstA = dstB + 3;
+
+    for (i = 0; i < height; i++) {
+        for (j = 0; j < width; j++) {
+            if (srcA[j]) {
+                k = j * 4;
+                dstR[k] = blend(srcA[j], srcR[j], dstR[k]);
+                dstG[k] = blend(srcA[j], srcG[j], dstG[k]);
+                dstB[k] = blend(srcA[j], srcB[j], dstB[k]);
+                dstA[k] = 0;
+            }
+        }
+
+        srcR += width;
+        srcG += width;
+        srcB += width;
+        srcA += width;
+        dstR += pitch[0];
+        dstG += pitch[0];
+        dstB += pitch[0];
+        dstA += pitch[0];
+    }
+}
+
 void apply_rgb(uint8_t** sub_img, uint8_t** data, int32_t* pitch, uint32_t width, uint32_t height)
 {
     uint8_t *srcR, *srcG, *srcB, *srcA, *dstR, *dstG, *dstB;

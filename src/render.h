@@ -29,6 +29,7 @@ void FillMatrix(ConversionMatrix* matrix, matrix_type mt);
 void make_sub_img(ASS_Image* img, uint8_t** sub_img, uint32_t width, int bits_per_pixel, int rgb, ConversionMatrix *mx);
 void make_sub_img16(ASS_Image* img, uint8_t** sub_img, uint32_t width, int bits_per_pixel, int rgb, ConversionMatrix* mx);
 
+void apply_bgr_(uint8_t** sub_img, uint8_t** data, int32_t* pitch, uint32_t width, uint32_t height);
 void apply_rgba(uint8_t** sub_img, uint8_t** data, int32_t* pitch, uint32_t width, uint32_t height);
 void apply_rgb(uint8_t** sub_img, uint8_t** data, int32_t* pitch, uint32_t width, uint32_t height);
 void apply_rgb48(uint8_t** sub_img, uint8_t** data, int32_t* pitch, uint32_t width, uint32_t height);
