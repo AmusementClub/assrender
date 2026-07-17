@@ -99,8 +99,22 @@ It have two csri render names: `assrender_textsub` and `assrender_ob_textsub`. `
 
 see `.github/workflows/build.yml`
 
+### Standalone libass package (Windows x64)
+
+The dedicated **libass Windows** workflow produces a versioned libass archive with all non-system dependencies and the MSVC runtime linked statically. Its public layout is:
+
+```text
+include/ass/ass.h
+include/ass/ass_types.h
+bin/ass.dll
+```
+
+`LICENSES/` and `VERSIONS.txt` are included for redistribution and traceability. Dependency versions are shared by the assrender and standalone builds in `.github/dependency-versions.env`.
+
+The **libass Windows** workflow reuses one `libass-<version>` prerelease tag per libass version. Each run keeps a separate asset named with its assrender commit and UTC build timestamp.
+
 ## Licenses
-  For all modules: see msvc/licenses
+For all modules: see msvc/licenses
 
 ## Links
 * Doom9 forum: https://forum.doom9.org/showthread.php?t=148926

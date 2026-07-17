@@ -1,13 +1,19 @@
 name: build
 
-on: [push]
+on:
+  push:
+    branches:
+      - '**'
+    tags-ignore:
+      - 'libass-*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
 
 env:
-  fc_ver: 2.17.1
-  ft_ver: 2-13-3
-  hb_ver: 13.0.1
-  fb_ver: 1.0.16
-  ass_ver: 0.17.4
+  NATIVE_DEPS_PACKAGE_ID: Assrender.LibassDeps.Static.Win-x64
 
 jobs:
   build:
@@ -28,36 +34,91 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: load dependency versions
+        shell: bash
+        run: |
+          grep -Ev '^[[:space:]]*(#|$)' .github/dependency-versions.env >> "$GITHUB_ENV"
+          source .github/dependency-versions.env
+          deps_hash="$(grep -E '^(PACKAGE_SCHEMA_VERSION|MSVC_ABI_VERSION|MSVC_RUNTIME|NASM_VERSION|FREETYPE_VERSION|HARFBUZZ_VERSION|FRIBIDI_VERSION|LIBPNG_VERSION|ZLIB_VERSION|MESON_VERSION)=' .github/dependency-versions.env | sha256sum | cut -c1-12)"
+          echo "NATIVE_DEPS_PACKAGE_VERSION=${PACKAGE_SCHEMA_VERSION}.0.0-ci.h${deps_hash}" >> "$GITHUB_ENV"
+
       - name: install deps (ubuntu)
         if: matrix.env.os == 'ubuntu-latest'
         run: |
           sudo apt-get update && sudo apt-get install -y ninja-build nasm
-          sudo python3 -m pip install --upgrade meson
-          git clone https://gitlab.freedesktop.org/fontconfig/fontconfig.git -b ${{ env.fc_ver }} --depth=1 fontconfig-${{ env.fc_ver }}
-          git clone --recurse-submodules https://github.com/freetype/freetype.git -b VER-${{ env.ft_ver }} --depth=1 freetype-${{ env.ft_ver }}
-          git clone --recurse-submodules https://github.com/harfbuzz/harfbuzz.git -b ${{ env.hb_ver }} --depth=1 harfbuzz-${{ env.hb_ver }}
-          git clone https://github.com/fribidi/fribidi.git -b v${{ env.fb_ver }} --depth=1 fribidi-${{ env.fb_ver }}
-          git clone https://github.com/libass/libass.git -b ${{ env.ass_ver }} --depth=1 libass-${{ env.ass_ver }}
+          sudo python3 -m pip install --upgrade "meson==${MESON_VERSION}"
+          git clone https://gitlab.freedesktop.org/fontconfig/fontconfig.git -b "${FONTCONFIG_VERSION}" --depth=1 "fontconfig-${FONTCONFIG_VERSION}"
+          git clone https://github.com/freetype/freetype.git -b "VER-${FREETYPE_VERSION//./-}" --depth=1 "freetype-${FREETYPE_VERSION}"
+          git clone https://github.com/harfbuzz/harfbuzz.git -b "${HARFBUZZ_VERSION}" --depth=1 "harfbuzz-${HARFBUZZ_VERSION}"
+          git clone https://github.com/fribidi/fribidi.git -b "v${FRIBIDI_VERSION}" --depth=1 "fribidi-${FRIBIDI_VERSION}"
+          git clone https://github.com/libass/libass.git -b "${LIBASS_VERSION}" --depth=1 "libass-${LIBASS_VERSION}"
       
       - name: set msbuild (windows)
         if: matrix.env.os == 'windows-latest'
         uses: ilammy/msvc-dev-cmd@v1
+
+      - name: set up NuGet (windows)
+        if: matrix.env.os == 'windows-latest'
+        uses: NuGet/setup-nuget@v2
+        with:
+          nuget-version: 6.14.0
       
-      - name: install deps and set env (windows) 
+      - name: configure GitHub Packages (windows)
+        if: matrix.env.os == 'windows-latest'
+        env:
+          GH_PACKAGES_TOKEN: ${{ github.token }}
+        run: |
+          $source = "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+          nuget sources Add `
+            -Name github `
+            -Source $source `
+            -UserName $env:GITHUB_ACTOR `
+            -Password $env:GH_PACKAGES_TOKEN `
+            -StorePasswordInClearText `
+            -NonInteractive
+          Add-Content -Path $env:GITHUB_ENV -Value "NUGET_PACKAGES_SOURCE=$source"
+
+      - name: restore static dependency package (windows)
+        if: matrix.env.os == 'windows-latest'
+        id: restore-static-dependencies
+        continue-on-error: true
+        run: |
+          $packagesRoot = Join-Path $env:RUNNER_TEMP "native-packages"
+          nuget install $env:NATIVE_DEPS_PACKAGE_ID `
+            -Version $env:NATIVE_DEPS_PACKAGE_VERSION `
+            -OutputDirectory $packagesRoot `
+            -Source github `
+            -ExcludeVersion `
+            -DirectDownload `
+            -NoHttpCache `
+            -NonInteractive
+          if ($LASTEXITCODE -ne 0) {
+            throw "Static dependency package is not available yet."
+          }
+
+          $depsPrefix = Join-Path $packagesRoot "$env:NATIVE_DEPS_PACKAGE_ID/native"
+          if (-not (Test-Path -LiteralPath (Join-Path $depsPrefix "lib/pkgconfig/freetype2.pc"))) {
+            throw "Restored dependency package is incomplete."
+          }
+
+          Add-Content -Path $env:GITHUB_ENV -Value "LIBASS_DEPS_PREFIX=$depsPrefix"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "available=true"
+
+      - name: install pkg-config (windows)
+        if: matrix.env.os == 'windows-latest'
+        run: choco install pkgconfiglite --no-progress -y
+
+      - name: install libass build tools (windows)
         if: matrix.env.os == 'windows-latest'
         run: |
-          choco install ninja nasm pkgconfiglite
-          python -m pip install --upgrade pip
-          pip install meson
-          $env:PKG_CONFIG_PATH = "C:/lib/pkgconfig"
-          Add-Content -Path $env:GITHUB_ENV -Value "PKG_CONFIG_PATH=$env:PKG_CONFIG_PATH"
-          # Get-ChildItem env:
-          git clone https://github.com/libass/libass.git -b ${{ env.ass_ver }} --depth=1 libass-${{ env.ass_ver }}
+          choco install ninja --no-progress -y
+          choco install nasm --version=$env:NASM_VERSION --allow-downgrade --no-progress -y
+          python -m pip install --disable-pip-version-check "meson==$env:MESON_VERSION"
 
       - name: build freetype (ubuntu)
         if: matrix.env.os == 'ubuntu-latest'
         run: |
-          cd freetype-${{ env.ft_ver }}
+          cd "freetype-${FREETYPE_VERSION}"
           meson --default-library=static -Dharfbuzz=disabled -Dbrotli=disabled -Dpng=disabled -Dzlib=disabled build
           meson compile -C build
           sudo meson install -C build
@@ -65,7 +126,7 @@ jobs:
       - name: build fontconfig (ubuntu)
         if: matrix.env.os == 'ubuntu-latest'
         run: |
-          cd fontconfig-${{ env.fc_ver }}
+          cd "fontconfig-${FONTCONFIG_VERSION}"
           meson --default-library=static -Ddoc=disabled -Dtests=disabled -Dcache-build=disabled build
           ninja -C build
           sudo ninja -C build install
@@ -73,7 +134,7 @@ jobs:
       - name: build harbuzz (ubuntu)
         if: matrix.env.os == 'ubuntu-latest'
         run: |
-          cd harfbuzz-${{ env.hb_ver }}
+          cd "harfbuzz-${HARFBUZZ_VERSION}"
           meson --default-library=static -Dtests=disabled -Dintrospection=disabled -Ddocs=disabled build
           meson compile -C build
           sudo meson install -C build
@@ -81,7 +142,7 @@ jobs:
       - name: build fribidi (ubuntu)
         if: matrix.env.os == 'ubuntu-latest'
         run: |
-          cd fribidi-${{ env.fb_ver }}
+          cd "fribidi-${FRIBIDI_VERSION}"
           meson --default-library=static -Ddocs=false -Dtests=false --backend=ninja build
           ninja -C build
           sudo ninja -C build install
@@ -89,28 +150,108 @@ jobs:
       - name: build libass (ubuntu)
         if: matrix.env.os == 'ubuntu-latest'
         run: |
-          cd ./libass-${{ env.ass_ver }}
+          cd "libass-${LIBASS_VERSION}"
           ./autogen.sh
           CFLAGS="-fPIC" CXXFLAGS="-fPIC" ./configure --disable-shared
           make -j2
           sudo make install
       
-      - name: build libass (windows)
+      - name: build static libass for assrender (windows)
         if: matrix.env.os == 'windows-latest'
         run: |
-          cd ./libass-${{ env.ass_ver }}
-          meson wrap update-db
-          meson wrap install fribidi
-          # meson wrap install fontconfig
-          meson wrap install freetype2
-          meson wrap install expat
-          meson wrap install harfbuzz
-          meson wrap install libpng
-          meson wrap install zlib
-          
-          meson -Ddefault_library=static -Dbuildtype=release -Dasm=enabled -Db_vscrt=static_from_buildtype -Dc_std=c11 -Dcpp_std=c++17 build
-          meson compile -C build
-          meson install -C build
+          $env:LIBASS_STATIC_PREFIX = Join-Path $env:RUNNER_TEMP "libass-static"
+          $arguments = @{
+            LibraryType = "static"
+            InstallPrefix = $env:LIBASS_STATIC_PREFIX
+          }
+          if (-not [string]::IsNullOrWhiteSpace($env:LIBASS_DEPS_PREFIX)) {
+            $arguments.DependencyPrefix = $env:LIBASS_DEPS_PREFIX
+          }
+          ./.github/scripts/build-libass-windows.ps1 @arguments
+
+          if ([string]::IsNullOrWhiteSpace($env:LIBASS_DEPS_PREFIX)) {
+            $env:LIBASS_DEPS_PREFIX = $env:LIBASS_STATIC_PREFIX
+            Add-Content -Path $env:GITHUB_ENV -Value "LIBASS_DEPS_PREFIX=$env:LIBASS_DEPS_PREFIX"
+          }
+          $pkgConfigPath = "$(Join-Path $env:LIBASS_STATIC_PREFIX 'lib/pkgconfig');$(Join-Path $env:LIBASS_DEPS_PREFIX 'lib/pkgconfig')"
+          Add-Content -Path $env:GITHUB_ENV -Value "LIBASS_STATIC_PREFIX=$env:LIBASS_STATIC_PREFIX"
+          Add-Content -Path $env:GITHUB_ENV -Value "PKG_CONFIG_PATH=$pkgConfigPath"
+
+      - name: publish static dependency package (windows)
+        if: matrix.env.os == 'windows-latest' && steps.restore-static-dependencies.outputs.available != 'true'
+        env:
+          GH_PACKAGES_TOKEN: ${{ github.token }}
+        run: |
+          $packageOutput = Join-Path $env:RUNNER_TEMP "native-nuget"
+          $packageRoot = Join-Path $packageOutput "package-root"
+          $nativeRoot = Join-Path $packageRoot "native"
+          $libraryRoot = Join-Path $nativeRoot "lib"
+          $pkgConfigRoot = Join-Path $libraryRoot "pkgconfig"
+          $licenseRoot = Join-Path $nativeRoot "LICENSES"
+          New-Item -ItemType Directory -Force -Path $packageOutput | Out-Null
+          New-Item -ItemType Directory -Force -Path $nativeRoot, $pkgConfigRoot, $licenseRoot | Out-Null
+
+          Copy-Item -LiteralPath (Join-Path $env:LIBASS_DEPS_PREFIX "include") -Destination $nativeRoot -Recurse
+          $libassHeaders = Join-Path $nativeRoot "include/ass"
+          if (Test-Path -LiteralPath $libassHeaders) {
+            Remove-Item -LiteralPath $libassHeaders -Recurse -Force
+          }
+
+          Get-ChildItem -LiteralPath (Join-Path $env:LIBASS_DEPS_PREFIX "lib") -Filter "*.a" |
+            Where-Object Name -ne "libass.a" |
+            Copy-Item -Destination $libraryRoot
+          Get-ChildItem -LiteralPath (Join-Path $env:LIBASS_DEPS_PREFIX "lib/pkgconfig") -Filter "*.pc" |
+            Where-Object Name -ne "libass.pc" |
+            Copy-Item -Destination $pkgConfigRoot
+          Get-ChildItem -LiteralPath (Join-Path $env:LIBASS_DEPS_PREFIX "LICENSES") -Filter "*.txt" |
+            Where-Object Name -ne "libass.txt" |
+            Copy-Item -Destination $licenseRoot
+
+          @(
+            "# $env:NATIVE_DEPS_PACKAGE_ID",
+            "",
+            "> Internal Windows x64 native dependency cache for assrender and standalone libass builds.",
+            "",
+            "## Build contract",
+            "",
+            "| Field | Value |",
+            "|---|---|",
+            "| Package version | $env:NATIVE_DEPS_PACKAGE_VERSION |",
+            "| Platform | Windows x64 |",
+            "| MSVC ABI | $env:MSVC_ABI_VERSION |",
+            "| Runtime | /$env:MSVC_RUNTIME |",
+            "| Meson | $env:MESON_VERSION |",
+            "| NASM | $env:NASM_VERSION |",
+            "| Dependency LTO | disabled |",
+            "",
+            "## Components",
+            "",
+            "| Component | Version |",
+            "|---|---|",
+            "| FreeType | $env:FREETYPE_VERSION |",
+            "| HarfBuzz | $env:HARFBUZZ_VERSION |",
+            "| FriBidi | $env:FRIBIDI_VERSION |",
+            "| libpng | $env:LIBPNG_VERSION |",
+            "| zlib | $env:ZLIB_VERSION |",
+            "",
+            'Licenses are stored under `native/LICENSES/`. This package version is immutable and keyed by the native package schema and build inputs.'
+          ) | Set-Content -LiteralPath (Join-Path $packageRoot "README.md") -Encoding utf8NoBOM
+
+          nuget pack ./.github/packages/native-package.nuspec `
+            -Properties "PackageId=$env:NATIVE_DEPS_PACKAGE_ID;PackageVersion=$env:NATIVE_DEPS_PACKAGE_VERSION;PackageRoot=$packageRoot" `
+            -OutputDirectory $packageOutput `
+            -NonInteractive
+          if ($LASTEXITCODE -ne 0) { throw "Failed to pack static dependencies." }
+
+          $packages = @(Get-ChildItem -LiteralPath $packageOutput -Filter "*.nupkg")
+          if ($packages.Count -ne 1) { throw "Expected one dependency package; found $($packages.Count)." }
+          $package = $packages[0]
+          nuget push $package.FullName `
+            -Source github `
+            -ApiKey $env:GH_PACKAGES_TOKEN `
+            -SkipDuplicate `
+            -NonInteractive
+          if ($LASTEXITCODE -ne 0) { throw "Failed to publish $($package.Name)." }
 
       - name: build (ubuntu)
         if: matrix.env.os == 'ubuntu-latest'
@@ -124,7 +265,7 @@ jobs:
           cmake -B build -S . -D CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
           cd build
           msbuild /t:Rebuild /m /p:Configuration=Release /p:Platform=${{ matrix.arch }} .\assrender.sln
-      
+
       - name: set short version
         shell: bash
         run: |
@@ -138,3 +279,22 @@ jobs:
           path: |
             build/src/libassrender.so
             build/src/Release/assrender.dll
+
+  publish-release:
+    name: publish release assets
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: release-assets/**/*

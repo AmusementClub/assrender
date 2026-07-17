@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+  <metadata>
+    <id>$PackageId$</id>
+    <version>$PackageVersion$</version>
+    <authors>AmusementClub</authors>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>Private Windows x64 native dependency cache for assrender and standalone libass builds.</description>
+    <readme>README.md</readme>
+    <tags>native libass windows x64 static</tags>
+    <repository type="git" url="https://github.com/AmusementClub/assrender" />
+  </metadata>
+  <files>
+    <file src="$PackageRoot$\**\*" target="" />
+  </files>
+</package>

@@ -1,0 +1,135 @@
+name: libass Windows
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: read
+
+env:
+  NATIVE_DEPS_PACKAGE_ID: Assrender.LibassDeps.Static.Win-x64
+
+jobs:
+  build:
+    name: build-libass-windows-x64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: load dependency versions
+        id: versions
+        shell: bash
+        run: |
+          grep -Ev '^[[:space:]]*(#|$)' .github/dependency-versions.env >> "$GITHUB_ENV"
+          source .github/dependency-versions.env
+          deps_hash="$(grep -E '^(PACKAGE_SCHEMA_VERSION|MSVC_ABI_VERSION|MSVC_RUNTIME|NASM_VERSION|FREETYPE_VERSION|HARFBUZZ_VERSION|FRIBIDI_VERSION|LIBPNG_VERSION|ZLIB_VERSION|MESON_VERSION)=' .github/dependency-versions.env | sha256sum | cut -c1-12)"
+          echo "NATIVE_DEPS_PACKAGE_VERSION=${PACKAGE_SCHEMA_VERSION}.0.0-ci.h${deps_hash}" >> "$GITHUB_ENV"
+          echo "libass_version=${LIBASS_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: set up NuGet
+        uses: NuGet/setup-nuget@v2
+        with:
+          nuget-version: 6.14.0
+
+      - name: configure GitHub Packages
+        env:
+          GH_PACKAGES_TOKEN: ${{ github.token }}
+        run: |
+          $source = "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+          nuget sources Add `
+            -Name github `
+            -Source $source `
+            -UserName $env:GITHUB_ACTOR `
+            -Password $env:GH_PACKAGES_TOKEN `
+            -StorePasswordInClearText `
+            -NonInteractive
+          Add-Content -Path $env:GITHUB_ENV -Value "NUGET_PACKAGES_SOURCE=$source"
+
+      - name: restore static dependency package
+        id: restore-dependencies
+        continue-on-error: true
+        run: |
+          $packagesRoot = Join-Path $env:RUNNER_TEMP "native-packages"
+          nuget install $env:NATIVE_DEPS_PACKAGE_ID `
+            -Version $env:NATIVE_DEPS_PACKAGE_VERSION `
+            -OutputDirectory $packagesRoot `
+            -Source github `
+            -ExcludeVersion `
+            -DirectDownload `
+            -NoHttpCache `
+            -NonInteractive
+          if ($LASTEXITCODE -ne 0) {
+            throw "Static dependency package is not available yet."
+          }
+
+          $depsPrefix = Join-Path $packagesRoot "$env:NATIVE_DEPS_PACKAGE_ID/native"
+          if (-not (Test-Path -LiteralPath (Join-Path $depsPrefix "lib/pkgconfig/freetype2.pc"))) {
+            throw "Restored dependency package is incomplete."
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "LIBASS_DEPS_PREFIX=$depsPrefix"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "available=true"
+
+      - name: install build tools
+        run: |
+          choco install ninja pkgconfiglite --no-progress -y
+          choco install nasm --version=$env:NASM_VERSION --allow-downgrade --no-progress -y
+          python -m pip install --disable-pip-version-check "meson==$env:MESON_VERSION"
+
+      - name: build and package libass
+        run: |
+          $installPrefix = Join-Path $PWD "libass-install-shared"
+          $arguments = @{
+            LibraryType = "shared"
+            InstallPrefix = $installPrefix
+            PackageOutputDirectory = (Join-Path $PWD "dist")
+            Architecture = "x64"
+          }
+          if (-not [string]::IsNullOrWhiteSpace($env:LIBASS_DEPS_PREFIX)) {
+            $arguments.DependencyPrefix = $env:LIBASS_DEPS_PREFIX
+          }
+          ./.github/scripts/build-libass-windows.ps1 @arguments
+
+          $sourceAsset = Join-Path $PWD "dist/libass-$env:LIBASS_VERSION-windows-x64.zip"
+          $shortCommit = $env:GITHUB_SHA.Substring(0, 7)
+          $timestamp = [DateTime]::UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'", [Globalization.CultureInfo]::InvariantCulture)
+          $assetName = "libass-$env:LIBASS_VERSION-windows-x64-$shortCommit-$timestamp.zip"
+          Move-Item -LiteralPath $sourceAsset -Destination (Join-Path $PWD "dist/$assetName")
+          Add-Content -Path $env:GITHUB_ENV -Value "LIBASS_ASSET_NAME=$assetName"
+
+      - name: publish reusable prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LIBASS_VERSION: ${{ steps.versions.outputs.libass_version }}
+        run: |
+          set -euo pipefail
+          asset="dist/${LIBASS_ASSET_NAME}"
+          release_tag="libass-${LIBASS_VERSION}"
+          notes="Automated Windows x64 builds with static dependencies. Asset names contain the assrender commit and UTC build time; exact dependency and toolchain versions are recorded in VERSIONS.txt. This tag points to the latest build."
+
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${release_tag}" >/dev/null 2>&1; then
+            gh api --method PATCH \
+              "repos/${GITHUB_REPOSITORY}/git/refs/tags/${release_tag}" \
+              -f sha="${GITHUB_SHA}" \
+              -F force=true >/dev/null
+          fi
+
+          if gh release view "${release_tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release edit "${release_tag}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "libass ${LIBASS_VERSION} Windows x64 prerelease" \
+              --notes "${notes}" \
+              --prerelease
+            gh release upload "${release_tag}" "${asset}" --repo "${GITHUB_REPOSITORY}"
+          else
+            gh release create "${release_tag}" "${asset}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --target "${GITHUB_SHA}" \
+              --title "libass ${LIBASS_VERSION} Windows x64 prerelease" \
+              --notes "${notes}" \
+              --prerelease
+          fi
