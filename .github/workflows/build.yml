@@ -261,8 +261,7 @@ jobs:
         if: matrix.env.os == 'windows-latest'
         run: |
           cmake -B build -S . -D CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
-          cd build
-          msbuild /t:Rebuild /m /p:Configuration=Release /p:Platform=${{ matrix.arch }} .\assrender.sln
+          cmake --build build --config Release --clean-first --parallel
 
       - name: set short version
         shell: bash
