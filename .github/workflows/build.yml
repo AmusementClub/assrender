@@ -32,7 +32,7 @@ jobs:
     runs-on: ${{ matrix.env.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: load dependency versions
         shell: bash
@@ -55,11 +55,13 @@ jobs:
       
       - name: set msbuild (windows)
         if: matrix.env.os == 'windows-latest'
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x64
 
       - name: set up NuGet (windows)
         if: matrix.env.os == 'windows-latest'
-        uses: NuGet/setup-nuget@v2
+        uses: NuGet/setup-nuget@v4
         with:
           nuget-version: 6.14.0
       
@@ -270,7 +272,7 @@ jobs:
             echo "VERSION=$ver_short" >> $GITHUB_ENV
       
       - name: upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: assrender_${{ matrix.env.identifier }}-${{ matrix.arch }}_${{ env.VERSION }}
           path: |
@@ -286,12 +288,12 @@ jobs:
       contents: write
     steps:
       - name: download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: release-assets
 
       - name: publish GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           files: release-assets/**/*

@@ -15,7 +15,7 @@ jobs:
     name: build-libass-windows-x64
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: load dependency versions
         id: versions
@@ -28,10 +28,12 @@ jobs:
           echo "libass_version=${LIBASS_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: set up MSVC
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x64
 
       - name: set up NuGet
-        uses: NuGet/setup-nuget@v2
+        uses: NuGet/setup-nuget@v4
         with:
           nuget-version: 6.14.0
 
@@ -108,7 +110,7 @@ jobs:
           set -euo pipefail
           asset="dist/${LIBASS_ASSET_NAME}"
           release_tag="libass-${LIBASS_VERSION}"
-          notes="Automated Windows x64 builds with static dependencies. Asset names contain the assrender commit and UTC build time; exact dependency and toolchain versions are recorded in VERSIONS.txt. This tag points to the latest build."
+          notes="Automated Windows x64 builds with static dependencies."
 
           if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${release_tag}" >/dev/null 2>&1; then
             gh api --method PATCH \
@@ -120,7 +122,7 @@ jobs:
           if gh release view "${release_tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
             gh release edit "${release_tag}" \
               --repo "${GITHUB_REPOSITORY}" \
-              --title "libass ${LIBASS_VERSION} Windows x64 prerelease" \
+              --title "libass ${LIBASS_VERSION}" \
               --notes "${notes}" \
               --prerelease
             gh release upload "${release_tag}" "${asset}" --repo "${GITHUB_REPOSITORY}"
@@ -128,7 +130,7 @@ jobs:
             gh release create "${release_tag}" "${asset}" \
               --repo "${GITHUB_REPOSITORY}" \
               --target "${GITHUB_SHA}" \
-              --title "libass ${LIBASS_VERSION} Windows x64 prerelease" \
+              --title "libass ${LIBASS_VERSION}" \
               --notes "${notes}" \
               --prerelease
           fi
