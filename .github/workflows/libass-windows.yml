@@ -23,7 +23,7 @@ jobs:
         run: |
           grep -Ev '^[[:space:]]*(#|$)' .github/dependency-versions.env >> "$GITHUB_ENV"
           source .github/dependency-versions.env
-          deps_hash="$(grep -E '^(PACKAGE_SCHEMA_VERSION|MSVC_ABI_VERSION|MSVC_RUNTIME|NASM_VERSION|FREETYPE_VERSION|HARFBUZZ_VERSION|FRIBIDI_VERSION|LIBPNG_VERSION|ZLIB_VERSION|MESON_VERSION)=' .github/dependency-versions.env | sha256sum | cut -c1-12)"
+          deps_hash="$(grep -E '^(PACKAGE_SCHEMA_VERSION|MSVC_ABI_VERSION|MSVC_RUNTIME|FREETYPE_VERSION|HARFBUZZ_VERSION|FRIBIDI_VERSION|LIBPNG_VERSION|ZLIB_VERSION|MESON_VERSION)=' .github/dependency-versions.env | sha256sum | cut -c1-12)"
           echo "NATIVE_DEPS_PACKAGE_VERSION=${PACKAGE_SCHEMA_VERSION}.0.0-ci.h${deps_hash}" >> "$GITHUB_ENV"
           echo "libass_version=${LIBASS_VERSION}" >> "$GITHUB_OUTPUT"
 
@@ -76,7 +76,6 @@ jobs:
       - name: install build tools
         run: |
           choco install ninja pkgconfiglite --no-progress -y
-          choco install nasm --version=$env:NASM_VERSION --allow-downgrade --no-progress -y
           python -m pip install --disable-pip-version-check "meson==$env:MESON_VERSION"
 
       - name: build and package libass

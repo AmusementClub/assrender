@@ -32,7 +32,7 @@ foreach ($line in Get-Content -LiteralPath $versionsFile) {
 $requiredVersions = @(
     "MSVC_ABI_VERSION",
     "MSVC_RUNTIME",
-    "NASM_VERSION",
+    "NASM_MIN_VERSION",
     "MESON_VERSION",
     "FREETYPE_VERSION",
     "HARFBUZZ_VERSION",
@@ -125,10 +125,25 @@ if ($LASTEXITCODE -ne 0 -or $mesonVersion -ne $env:MESON_VERSION) {
     throw "Expected Meson $env:MESON_VERSION; found '$mesonVersion'."
 }
 
-$nasmVersion = (& nasm -v).Trim()
-if ($LASTEXITCODE -ne 0 -or $nasmVersion -notmatch "(?<![0-9.])$([Regex]::Escape($env:NASM_VERSION))(?![0-9.])") {
-    throw "Expected NASM $env:NASM_VERSION; found '$nasmVersion'."
+$nasmCommand = Get-Command nasm -CommandType Application -ErrorAction SilentlyContinue
+if ($null -eq $nasmCommand) {
+    throw "NASM >= $env:NASM_MIN_VERSION is required but was not found in PATH."
 }
+$nasmVersionOutput = (& $nasmCommand.Source -v | Out-String).Trim()
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to query NASM at '$($nasmCommand.Source)'."
+}
+$nasmVersionMatch = [Regex]::Match($nasmVersionOutput, '(?i)\bNASM version\s+(?<version>\d+(?:\.\d+){1,2})\b')
+if (-not $nasmVersionMatch.Success) {
+    throw "Could not parse NASM version from '$nasmVersionOutput'."
+}
+$nasmVersionText = $nasmVersionMatch.Groups['version'].Value
+$nasmVersion = [Version]::Parse($nasmVersionText)
+$minimumNasmVersion = [Version]::Parse($env:NASM_MIN_VERSION)
+if ($nasmVersion -lt $minimumNasmVersion) {
+    throw "NASM >= $env:NASM_MIN_VERSION is required; found $nasmVersionText at '$($nasmCommand.Source)'."
+}
+Write-Output "Using NASM $nasmVersionText from '$($nasmCommand.Source)'."
 
 if ($env:VCToolsVersion -notmatch '^(\d+)\.') {
     throw "VCToolsVersion is unavailable; initialize the MSVC build environment first."
@@ -310,7 +325,7 @@ Get-ChildItem -LiteralPath $dependencyLicenses -Filter "*.txt" |
     "libpng=$env:LIBPNG_VERSION",
     "zlib=$env:ZLIB_VERSION",
     "meson=$env:MESON_VERSION",
-    "nasm=$env:NASM_VERSION",
+    "nasm=$nasmVersionText",
     "msvc_abi=$env:MSVC_ABI_VERSION",
     "msvc_toolset=$env:VCToolsVersion",
     "msvc_runtime=$env:MSVC_RUNTIME",
